@@ -1,0 +1,918 @@
+---
+title: "MultilevelNEW"
+editor: visual
+output: html
+---
+
+
+# Introductie
+Ik had al een tijdje geen multilevel-analyses meer gedaan en wilde dat weer eens doen met aangepaste technieken. Ben zelf 'opgeleid' met het prachtige werk van de multilevelgroep uit Bristol (Goldstein, Rabash, Brown e.a.) en ook dat van Joop Hox, die ik op dit gebied van dichtbij heb meegemaakt. Toen ik wat rondkeek, kwam ik de blog van Rafaella Vacca (Universiteit van Milaan) tegen, die ik inzichtelijk en vernieuwend vond. Hij werkt met het pakket `lme4` en `tidyverse`. Hieronder vind je mijn bewerkte versie. Dank je wel Rafaella.
+
+<br>
+
+* Dit is een introductie op multilevel analyse met R voor de seminars die Raffaele Vacca eerder gaf op de [UniMi NASP graduate school](https://www.nasp.eu/training/phd-programmes/esls.html) en [Behave Lab](https://behavelab.org/). 
+* **Hier staat het oorspronkelijke materiaal** dat je [hier](https://github.com/raffaelevacca/Intro-multilevel-with-R) (GitHub) kunt downloaden. 
+
+**R pakketten en literatuur**:
+
+* Deze tutorial richt zich op (1) het [`lme4`](https://github.com/lme4/lme4) pakket voor (Restricted) Maximum Likelihood Estimation van lineaire multilevel modellen [@bates_fitting_2015; @bates_lme4_2012] en (2) integreren van `lme4` met  [`tidyverse`](https://www.tidyverse.org/), een verzameling van R pakketten voor data wetenschap (waaronder `dplyr`, `ggplot2`, en `purrr`) met een gezamenlijke taal en een set van principles [@wickham_r_2017]. 
+* Het is gebaseerd op de discussie '(linear) multilevel modeling' van @fox_fitting_2018 en @fox_linear_2016. Het voorbeeld dat hier gebruikt wordt komt oorspronkelijk van @raudenbush_hierarchical_2002. Een deel van de code is ook geïnsprieerd door Wickham and Grolemund's [-@wickham_r_2017] behandeling van statististisch modeleren met R (vooral Hfd. 20). 
+* De data komen van
+[`MathAchieve`](https://rdrr.io/cran/nlme/man/MathAchieve.html) en [`MathAchSchool`](https://rdrr.io/cran/nlme/man/MathAchSchool.html) data-frames in het [`nlme`](https://cran.r-project.org/web/packages/nlme/index.html) pakket. Daar komen ze weer via het "High School and Beyond" onderzoek met 7185 studenten in 160 V.S. middelbare scholen, inclusief 70 Katholieke en 90 Openbare scholen [@fox_linear_2016; @raudenbush_hierarchical_2002]. Kijk naar de links en referenties hierboven als je meer documentatie zoekt voor deze data. 
+
+**Nog wat litertuur en bronnen**: 
+
+* Voor statistische theorie, details over schattingmethodes en meer gedetailleerd behandeling van multilevel modelellen die in deze introductie worden behandeld (in chronologische volgorde): @raudenbush_hierarchical_2002; @gelman_data_2006; @rasbash_lemma_2008; @goldstein_multilevel_2010; @snijders_multilevel_2012; @simonoff_sage_2013; @fox_applied_2016 (Ch. 23-24).
+* Voor meer informatie over de R-implementatie van multilevel modellen, inclusief verschillende pakketten en schattingsmethodes: @finch_multilevel_2014; @fox_fitting_2018;  [Ben Bolker](https://math.mcmaster.ca/~bolker/)'s [FAQ page](http://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#introduction) over 'Generalized Linear Mixed Models'.
+
+## Set-up instructies
+
+Voor deze workshop is het nodig dat je:
+
+1. Dat je de laatste versie binnenhaalt van **R** [hier](https://cran.r-project.org/mirrors.html) (selecteer een locatie bij je in de buurt).
+    * Volg de instructies om R op jouw computer te installeren.
+2. Download **RStudio** (vrije versie) [hier](https://www.rstudio.com/products/rstudio/download/).
+    * Volg de instructies om RStudio op jouw computer te installeren.
+3. Installeer de **R pakkettem** genoemd [onder](#packages).
+    * Open RStudio en ga naar`Top menu > Tools > Install packages...`.
+    * Installeer elk pakket van de lijst.
+4. Breng de **laptop** mee naar de workshop.
+5. Download de **workshop project folder** [hier](https://github.com/raffaelevacca/Intro-multilevel-with-R)
+    * Klik op de link > Klik op de groene `Clone` knop > Download ZIP > Dan 'unzip' de folder op jouw computer.
+    * Ik zou dat de in de klas doen aan het begin van de workshop zodat je de laatste versie van folder download.
+
+Een keer in de klas, ga naar de workshop project folder en dubbelklik op de workshop R project file (`Multilevel_with_R.Rproj`). Dit zal RStudio openen.
+
+## Vereiste R pakketten {#packages}
+
+* Algemeen:
+    - [`broom`](https://broom.tidymodels.org/) om de model resultaten als tidy tibbles te zien.    
+    - [`magrittr`](https://magrittr.tidyverse.org/) voor 'pipe' en gerelateerde handelingen.   
+    - [`tidyverse`](https://www.tidyverse.org/).  
+* Om multilevel modellen te draaien en de resultaten te zien:    
+    - [`broom.mixed`](https://cran.r-project.org/web/packages/broom.mixed/vignettes/broom_mixed_intro.html).   
+    - [`car`](https://cran.r-project.org/web/packages/car/index.html) voor testen van significantie.    
+    - [`ggeffects`](https://strengejacke.github.io/ggeffects/) om de geschatte waarden ('predicted values') te berekenen en te visualiseren.   
+    - [`lme4`](https://github.com/lme4/lme4) voor specificeren en schatten van multilevel modellen.   
+    - [`lmerTest`](https://www.jstatsoft.org/article/view/v082i13) voor testen van significatie van multilevel modellen.    
+
+# Exploreren en voorbereiden van data 
+
+* Importeren en bekijken van de data in R.
+* Verkrijgen van basis informatie over de multilevel structuur van de data.
+* Onze afhankelijke variabele is de student's score op wiskunde toets ('math assessment' (`mathach`).
+* Onafhankelijke variabelen:
+  * Student karakteristieken: score op sociaal-economische status (SES), in afwijking van het school SES gemiddelde (`ses.dev`).
+  * School karakteristieken: gemiddelde van de school-SES (`mean.ses`) en de school type/sector (Public vs Catholic, `sector`).
+
+
+```{r include=FALSE, cache=FALSE}
+# Pakketten actief maken
+library(tidyverse)
+library(car)
+library(lme4)
+library(lmerTest)
+library(ggeffects)
+library(magrittr)
+library(broom)
+library(broom.mixed)
+
+```
+
+```{r}
+# Data laden
+load("multilevel_data.rda")
+```
+
+
+```{r explore, message = FALSE}
+# Bekijke de data
+stud_data
+school_data
+```
+
+# Hoeveel scholen zitten erin?
+
+```{r}
+stud_data %>%
+  pull(school) %>%
+  n_distinct
+```
+
+# Hoeveel studenten zitten er op iedere school (school-omvang)?
+
+```{r}
+stud_data %>%
+  count(school)
+```
+
+# Sorteer het op school-omvang
+
+```{r}
+stud_data %>%
+  count(school, sort = TRUE)
+```
+
+# Wat is de gemiddelde school-omvang?
+
+```{r}
+stud_data %>%
+  count(school) %>%
+  summarise(mean(n))
+```
+
+# Bereken het gemiddelde student-SES op elke school
+
+```{r}
+
+stud_data %<>%                      # Gebruik marittr %<>% operator: pipe + bereken
+  group_by(school) %>%              # Groepeer data frame per school voor mutate 
+  mutate(mean.ses= mean(ses)) %>%   # Creeer mean(ses) per school
+  ungroup                           # Ungroup data frame
+
+stud_data
+```
+```{r}
+# Creeer student's SES afwijking van school gemiddelde
+(stud_data %<>% 
+    mutate(ses.dev = ses - mean.ses))
+```
+
+
+```{r}
+# Combineer met meer school-niveau variabelen (sector)
+df <- left_join(stud_data, school_data, by="school")
+
+df
+```
+
+```{r}
+# Variabele (school ID) moet een factor worden (zeg, categoricale variabele)
+df %<>% 
+  mutate(school = factor(school))
+
+# Frequenties van school sector: 
+# N scholen
+school_data %>%
+  count(sector)
+```
+
+```{r}
+# N studenten
+df %>%
+  count(sector)
+```
+Dus zo konden we antwoorden vinden op vragen als:
+* _Hoeveel studenten en scholen zitten er in de data?_
+* _Wat is gemiddelde aantal studenten per school?_
+* _Hoeveel zijn er Katholiek, hoeveel openbaar?_
+
+# Analyses per school: scatter-plots
+Nu we een algemeen beeld hebben, gaan we vervolgens kijken wat we over individuele schooen kunnen zeggen. Wat je moet doen:
+* Maak een kleine dataset van een random sample van 20 Katholieke scholen en 20 Openbare scholen.
+* Maak een scatter-plot van de student wiskunde score per student_SES in elke school, voor de subsample Katholieke en Openbare scholen.
+
+```{r}
+# Sample 20 random IDs van katholieke scholen
+set.seed(1129)
+school.IDs <- school_data %>%
+  filter(sector=="Catholic") %>%
+  sample_n(20) %>% 
+  pull(school)
+
+school.IDs
+```
+
+```{r}
+# Filter data op juist deze school IDs
+(df.cat <- df %>%
+    filter(school %in% school.IDs))
+```
+
+```{r}
+# We kunnen alles in een enkele pipe zetten om een korere code te hebben
+set.seed(1129)
+df.cat <- school_data %>%
+  filter(sector=="Catholic") %>%
+  sample_n(20) %>% 
+  pull(school) %>%
+  {filter(df, school %in% .)} # Let op {} haakjes zodat "." niet als eerste argument in de filter() wordt gebruikt
+
+# Doe hetzelfde voor de Openbare scholen
+set.seed(1129)
+df.pub <- school_data %>%
+  filter(sector=="Public") %>%
+  sample_n(20) %>% 
+  pull(school) %>%
+  {filter(df, school %in% .)}
+
+# Plot SES vs wisk score in elk van 20 Katholieke scholen
+# Data en variabelen
+p <- ggplot(df.cat, aes(x=ses.dev, y=mathach)) + 
+  # Scatterplot geom
+  geom_point(shape=1) + 
+  # voeg een lineaire regressioe lijn toe
+  geom_smooth(method="lm", color= "red", se=FALSE) + 
+  # Facet per school
+  facet_wrap(~ school, nrow=4, ncol=5) + 
+  # Zwart/wit thema
+  theme_bw() 
+
+# Bekijk de plot
+p
+```
+```{r}
+# Zelfde als hierboven maar nu voor Openbare scholen
+ggplot(df.pub, aes(x=ses.dev, y=mathach)) + 
+  # Scatterplot geom
+  geom_point(shape=1) + 
+  # rode lineaire regressie lijn
+  geom_smooth(method="lm", color= "red", se=FALSE) + 
+  # Facet per school
+  facet_wrap(~ school, nrow=4, ncol=5) + 
+  # Zwart/wit thema
+  theme_bw()
+```
+
+* _Wat valt je op over intercept en slope als je naar de plaatjes kijkt? Zijn ze constant over de scholen? _
+* _Wat van soort relatie zie je in het algemeen tussen students-SES en z'n wiskundescore in de scholen? Verandert deze relatie tussen scholen?_
+* _Is er verschil in variatie tussen de regressielijnen van de katholieke en openbare scholen?_
+
+# Aparte analyses per school: lineaire regressies
+Nu gaan we aparte analyses per school maken. Wat je moet doen:
+* Maak een genest dataframe op schoolniveau (`nested.df`) met een rij van elke school inclusief het dataframe voor de leerlingen van die school.    
+* Gebruik `nested.df` en `purrr::map` om een afzonderlijk lineaire regressiemodel te schatten van wiskundeprestaties op SES in elke school.   
+* Zet de schattingsresultaten in nieuwe kolommen in het geneste dataframe.   
+* Visualiseer de schattingsresultaten:   
+   - Verdeling van schattingen van intercept en helling per schoolsector (boxplots).     
+   - Verdeling van schattingen van intercept en helling per schoolgemiddelde SES, per schoolsector (scatterplots).
+
+
+
+```{r separate-reg, out.width= "100%", fig.height = 4}
+# Schat een lineair model voor mathach zoals voorspeld door ses.dev, apart
+# voor elk van de 160 scholen.
+
+# Allereerst, nest het studenten dataframe per school
+nested.df <- df %>% 
+  group_by(school) %>%
+  nest()
+
+# Dit creeert een school-niveau dataframe (data rij = school), met in  
+# schoolrij een student niveau dataframe voor die school.
+nested.df
+```
+
+```{r}
+# Wat zeggen van de rijen en kolommen, wat indiceren ze in elk school dataframe?
+# (b.v. [47 x 7])
+
+# De nested.df$data is een list van dataframes, een voor elke school
+class(nested.df$data)
+```
+
+```{r}
+length(nested.df$data)
+```
+
+```{r}
+# Bv, kijk eens naar de data van school 1224:
+
+## Nog steeds genest
+nested.df %>%
+  filter(school=="1224") %>%
+  dplyr::select(school, data)
+```
+
+```{r}
+## Niet genest
+nested.df %>%
+  filter(school=="1224") %>%
+  dplyr::select(school, data) %>%
+  unnest(cols = c(data))
+```
+
+```{r}
+# Of kijk naar het eerste element van nested.df$data
+nested.df$data[[1]]
+```
+
+```{r}
+# Dat kan ook met tidyverse syntax
+nested.df %>%
+  pull(data) %>%
+  extract2(1)
+```
+
+```{r}
+# In plaats van het geneste dataframe te gebruiken, kunnen we nu een aparte linaire regressiemodel fitten in elk
+# dataframe van een school (elk element van nested.df$data)
+lmodels <- nested.df %>%
+  # Krijg alle school dataframes
+  pull(data) %>%
+  # Run lm() voor elk via map
+  purrr::map(~ lm(mathach ~ ses.dev, data= .x))
+
+# Let op voor de formule notatie in purrr::map(), waar elke .x een element indiceert van 
+# nested.df$data.
+
+# lmodels is nu een list van gedraaide lineaire modellen, een voor elke school
+head(lmodels)
+```
+```{r}
+class(lmodels)
+```
+
+```{r}
+length(lmodels)
+
+```
+
+```{r}
+# In plaats van deze list als een apart object, kunnen we nu een nieuwe
+# kolom maken in nested.df, elk model in een schoolrij van nested.df.
+nested.df %<>%
+  mutate(model = purrr::map(data, 
+                            ~ lm(mathach ~ ses.dev, data= .x)))
+
+# Resultaat
+nested.df
+```
+
+```{r}
+# De derde kolom van nested.df ($model) omvat het gedraaide lineaire model  
+# voor elke school (elke row).
+
+# B.v., model voor school 1224
+nested.df %>%
+  filter(school=="1224") %>%
+  pull(model) %>%
+  extract2(1)
+```
+
+```{r}
+# Krijg het intercept en slope voor model van school 1224
+nested.df %>%
+  filter(school=="1224") %>%
+  pull(model) %>%
+  # Dit is nodig om het lm object te krijgen uit het listobject
+  extract2(1) %>%
+  coef
+```
+
+```{r}
+# Of, voor een tidy output
+nested.df %>%
+  filter(school=="1224") %>%
+  pull(model) %>%
+  extract2(1) %>%
+  broom::tidy()
+```
+
+```{r}
+# Laten we nu dezelfde code gebruiken via 'mutate' om opgeschoonde resultaten voor alle
+# modellen (alle scholen) te krijgen
+nested.df %<>%
+  mutate(model.results = purrr::map(model, 
+                            broom::tidy)
+  )
+nested.df
+```
+
+```{r}
+# Unnest on de resultaten te zien
+nested.df %>%
+  unnest(model.results)
+```
+
+```{r}
+# Laten we het deel houden waarin we geinteresseerd zijn
+lm.coeff <- nested.df %>%
+  unnest(model.results) %>%
+  dplyr::select(school, term, estimate)
+
+lm.coeff
+```
+
+```{r}
+# Reshape en geef het een andere naam 
+lm.coeff %<>%
+  # Model intercept en slope in twee kolommen
+  pivot_wider(names_from = term, values_from = estimate) %>%
+  # Geef de kolommen een andere naam
+  dplyr::select(school, intercept = `(Intercept)`, slope = ses.dev)
+
+lm.coeff
+```
+
+```{r}
+# Voeg schoolsector en 'mean.ses' (gemiddelde ses) toe aan dit dataframe.
+
+# Creeer dataframe met school ID, schoolsector, mean.ses
+lm.df <- df %>% 
+  dplyr::select(school, sector, mean.ses) %>%
+  distinct
+
+lm.df
+```
+
+```{r}
+# Combineer dit met lm.coeff
+(lm.df %<>%
+    left_join(lm.coeff, by="school")
+  )
+```
+
+```{r}
+# Nu kunnen we een boxplot maken van schoolintercepts per schoolsector
+ggplot(lm.df, aes(x= sector, y= intercept)) + geom_boxplot()
+```
+```{r}
+# En een boxplot van de slopes van school_SES slopes per schoolsector
+ggplot(lm.df, aes(x= sector, y= slope)) + geom_boxplot()
+```
+
+```{r}
+# Of beide schattingen in een scatterplot per schoolsector
+ggplot(lm.df, aes(x= intercept, y= slope)) + 
+  # Scatterplot
+  geom_point() +
+  # Lineaire regressielijn
+  geom_smooth(method="lm") +
+  # Facet per sector
+  facet_wrap(~ sector) +
+  theme_bw()
+```
+
+```{r}
+# Scatterplot van schoolintercepts voor school mean.ses per sector
+ggplot(lm.df, aes(x= mean.ses, y= intercept)) + 
+  geom_point() + 
+  geom_smooth(method="loess") +
+  facet_wrap(~ sector) +
+  theme_bw()
+```
+
+
+```{r}
+# Scatterplot van schoolslopes van school mean.ses per sector
+ggplot(lm.df, aes(x= mean.ses, y= slope)) + 
+  geom_point() + 
+  geom_smooth(method="loess") +
+  facet_wrap(~ sector) +
+  theme_bw()
+```
+Nu kun je op volgende vragen antwoord geven.
+* _In `nested.df$data`, wat geven de aantallen rijen en kolommen aan in het dataframe van elke school?_.   
+* _Welke verschillen zie je tussen de verdeling van de geschatte *intercepts* in Openbare vs Katholieke scholen? Wat betekent dit inhoudelijk?_.  
+* _Welke verschillen zie je tussen de verdeling van de geschatte *slopes* in openbare vs. katholieke scholen? Hoe interpreteer je dit inhoudelijk?_.   
+* _Welke relatie komt naar voren tussen de gemiddelde SES van de school en de geschatte intercept van de school? Hoe zit het met dezelfde relatie voor de geschatte helling van de school? Zijn er in dit opzicht verschillen tussen openbare en katholieke scholen?_
+
+
+# Hierarchische Lineair Model: variantie componenten
+Nu gaan we over naar multilevel modeleren en we zullen het volgende doen:
+* Schat een variantiecomponentenmodel op twee niveaus met leerlingen (niveau 1) genest in scholen (niveau 2): `mod1`.     
+   - Dit is een random-intercept model zonder voorspeller, dat eenvoudig `matchach` variatie verdeelt tussen variatie op leerlingniveau (tussen leerlingen) en variatie op schoolniveau (tussen scholen).      
+   - Hier wordt `mathach` gemodelleerd als resultaat van een willekeurig effect van de school (groepsniveau) plus een willekeurig effect van de leerling (individueel of restniveau): deze worden respectievelijk $u_i$ en $e_i$ genoemd door @rasbash_lemma:_2008.     
+   - Net als alle modellen in deze inleiding wordt `mod1` geschat via Restricted Maximum Likelihood (REML).    
+* Voer een Likelihood Ratio Test (LRT) uit voor de significantie van schooleffecten, waarbij `mod1` wordt vergeleken met hetzelfde nul lineaire model (geen voorspeller) zonder rekening te houden met clustering van leerlingen in scholen (d.w.z. een single-level model).    
+* Zie schattingen voor de variantiecomponenten of random-effectparameters: de variantie op leerlingniveau en de variantie op schoolniveau - respectievelijk $\sigma^2_e$ en $\sigma^2_u$ genoemd door @rasbash_lemma:_2008.    
+* Gebruik schattingen voor $\sigma^2_e$ en $\sigma^2_u$ om de variantieverdelingscoëfficiënt (VPC) te berekenen:)     
+   - Dit is het deel van de `mathach` variatie dat toe te schrijven is aan het tweede niveau, dat wil zeggen, aan verschillen tussen scholen.     
+   - Merk op dat in variantiecomponentenmodellen en random-interceptmodellen (maar niet in random hellingsmodellen) de VPC hetzelfde is als de Intraclass Correlatiecoëfficiënt (de correlatie tussen `mathach` van twee willekeurige leerlingen van dezelfde school).
+
+
+```{r var-comp}
+# Laten we beginnen met een simpele variantie componenten model
+mod1 <- lmer(mathach ~ 1 + (1 | school), 
+             data=df)
+
+# Model 1 is geschat met 'Restricted Maximum Likelihood' (REML) als standaard.
+# Je kunt REML=FALSE instellen om ipv Maximum Likelihood (ML) te gebruiken.
+
+# Zie de resultaten.
+
+# lmerTest voor de samenvatting van die resultaten
+summary(mod1)
+```
+
+```{r}
+# Resultaten in tidy formaat
+(mod1.res <- tidy(mod1))
+```
+
+```{r}
+# Om significantie van schooleffecten te meten, laten we eens een nul single-niveau
+# model schatten
+mod1_sl <- lm(mathach ~ 1, 
+              data=df)
+
+# Vergelijk de twee modellen met Likelihood Ratio Test (LRT).
+anova(mod1, mod1_sl) 
+```
+
+```{r}
+# Als standaard, refit anova() de modellen met ML dus de LRT is correct.
+
+# School-niveau variantie schatting
+(sigma2_u <- mod1.res %>%
+    filter(effect == "ran_pars", group == "school") %>%
+    # Standaard deviatie
+    pull(estimate) %>%
+    # ^2 = Variantie
+    .^2)
+```
+
+```{r}
+# Schat voor onverklaarde deel, individuele niveau variantie 
+(sigma2_e <- mod1.res %>%
+    filter(effect == "ran_pars", group == "Residual") %>%
+    # Standaard deviatie
+    pull(estimate) %>%
+    # ^2 = Variantie
+    .^2)
+```
+
+```{r}
+# 'Variance Partition Coefficient' (Variantie Deel Coeffient) 
+sigma2_u/(sigma2_u + sigma2_e)
+```
+
+* _Hoe kunnen we de resultaten van het variantiecomponentenmodel interpreteren?_   
+* _Wat is het aandeel van de `wiskunde` variatie dat verklaard wordt door het schoolniveau? Hoe verhoudt dit zich tot de correlatie tussen wiskundescores van twee willekeurige leerlingen op dezelfde school?_     
+* _Zijn schooleffecten volgens de LRT significant, dat wil zeggen, is het schoolniveau een significante bron van variatie in `mathach`?_
+
+
+# Hierarchisch Lineair Model: random intercept
+
+* Schat `mod2`, een random intercept model met 'fixed slope' voor individuele student_SES.
+* Zie schattingen voor population-niveau vaste effecten (`Intercept` en `ses.dev` slope) en voor random-effect parameters.
+* Dit model is hetzelfde als vorig variantie componenten model, behalve dat `mathach` nu voor een deel verklaard wordt door individuele student_SES (`ses.dev`), en het onderverklaarde variantie deel tussen individuele en school random effecten.
+  - De VPC neemt iets toe vergeleken met `mod1`, dat geeft aan dat een relatief hoger deel van de (onverklaarde) `mathach` variatie nu verklaard wordt door school: met andere woorden, student_SES snoept een deel van student-niveau variatie dat het vorige `mod1` toeschreef aan individuele random effecten ($e_i$).
+* Er is een serieus debat over en hoe p-waarden te berekenen (en rapporteren) in multilevel modellen: 
+  * Zie Ben Bolker's GLMM FAQ discussie van [dit onderwerp](http://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#why-doesnt-lme4-display-denominator-degrees-of-freedomp-values-what-other-options-do-i-have), en van [testen van significantie](http://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#testing-hypotheses) voor multilevel modellen in het algemeen.
+  * Wij gebruiken [`lmerTest`](https://www.jstatsoft.org/article/view/v082i13), de `summary` functie.
+  * But note that p-values would not by displayed if we applied the standard `summary` function to our estimated models.
+  * Another option to test the significance of single coefficients is running the [`car::Anova`](https://www.rdocumentation.org/packages/car/versions/3.0-13/topics/Anova) function on the model object [see discussion by @fox_fitting_2018].
+
+```{r rand-int}
+# Random intercept model met vaste slope voor individueel student_SES.
+mod2 <- lmer(mathach ~ 1 + ses.dev + (1 | school), 
+             data=df)
+
+# Zie resultaten.
+summary(mod2)
+```
+```{r}
+# Andere optie om significantie te testen van single coefficient schattingen.
+Anova(mod2)
+
+```
+```{r}
+# Kenward-Roger "F" tests met Satterthwaite degrees of freedom, welke in dit 
+# geval nauwkeurige resultaten (maar neemt meer rekentijd in beslag)
+# Anova(mod2, test="F")
+
+# Tidy resulten
+(mod2.res <- tidy(mod2))
+```
+
+```{r}
+# Zie schattingen estimates voor populatie-niveau fixed effecten: intercept en SES
+# slope
+mod2.res %>%
+  filter(effect == "fixed")
+```
+
+```{r}
+# Zie de schattingen voor de variantie component parameters (aka random-effect
+# parameters)
+mod2.res %>%
+  filter(effect == "ran_pars")
+
+```
+
+```{r}
+# School-niveau variantie schatting
+(sigma2_u <- mod2.res %>%
+  filter(effect == "ran_pars", group == "school") %>%
+  # Standaard deviatie
+  pull(estimate) %>%
+  # ^2 = Variantie
+  .^2)
+```
+
+```{r}
+# Residual, individueel-niveau variantie
+(sigma2_e <- mod2.res %>%
+    filter(effect == "ran_pars", group == "Residual") %>%
+    # Standaard deviatie
+    pull(estimate) %>%
+    # ^2 = Variantie
+    .^2)
+```
+
+```{r}
+# VPC
+sigma2_u/(sigma2_u + sigma2_e)
+```
+Nu kun je hier antwoord op geven:
+* _Hoe kunnen we de schattingen interpreteren voor de fixed-effect parameters?_
+* _Hoe kunnen we de schattingen interpreteren voor de variantie componenten? _
+* _Gebaseerd op VPC, welk deel van de `mathach` variatie is _niet verklaard_ door `ses.dev` is toe te schrijven aan het schoolniveau?_
+  - _Hoe verschilt dit van de interpretatie van VPC in het variantie componenten model `mod1`?_
+  - _Hoe kunnen we toename in VPC interpreteren vergeleken met `mod1`?_
+
+# Hierarchisch Lineair Model: random slope
+We gaan nog stapje verder door ook te kijken naar het random slope model.
+* Schat `mod3`, een random slope model waarin het effect van individuele stduent_SES op wiskundescore mag variëren tussen scholen.    
+* Bekijk schattingen voor de verschillende random-effect parameters in dit model: variantie van random intercept, variantie van random slope, covariantie tussen random intercept en random slope.   
+* Deze worden respectievelijk $\sigma^2_{u0}$, $\sigma^2_{u1}$ en $\sigma_{u01}$ genoemd door @rasbash_lemma:_2008.  
+* Merk op dat de resultaten van het `lme4` model de _correlatie_ $\rho_{u01}$ (niet de covariantie) tussen willekeurig intercept en willekeurige slope weergeven: om de covariantie te krijgen vermenigvuldig je gewoon de correlatie met de twee standaarddeviaties ($\rho_{u01}*\sigma_{u0}*\sigma_{u1}$).
+
+```{r rand-slo}
+# Random slope model met SES slope die mag varieren tussen scholen
+mod3 <- lmer(mathach ~ 1 + ses.dev + (1 + ses.dev | school), 
+             data=df)
+
+# Resulten
+summary(mod3)
+```
+
+```{r}
+# Tidy resultaten
+(mod3.res <- tidy(mod3))
+```
+
+```{r}
+# School-niveau variantie van random intercept
+mod3.res %>%
+  filter(effect == "ran_pars", group == "school", term == "sd__(Intercept)") %>%
+  # Standaard deviantie
+  pull(estimate) %>%
+  # ^2 = Variantie
+  .^2
+```
+
+```{r}
+
+# School-niveau variantie van random SES slope
+mod3.res %>%
+  filter(effect == "ran_pars", group == "school", term == "sd__ses.dev") %>%
+  # Standaard deviantion
+  pull(estimate) %>%
+  # ^2 = Variantie
+  .^2
+```
+
+```{r}
+# School-niveau correlatie tussen random intercept en random SES slope
+mod3.res %>%
+  filter(effect == "ran_pars", group == "school", term == "cor__(Intercept).ses.dev") %>%
+  # Standaard deviantie
+  pull(estimate)
+```
+
+* _Hoeveel random effect parameters hebben we nu, vergeleken met eerdere modellen? Waarom?_   
+* _Hoe interpreteren we de schattingen voor variantie van random intercept en variantie van random helling?_   
+* _Hoe interpreteren we de geschatte correlatie van random intercept en random helling?_   
+
+# Contextuele variabelen en cross-niveau interacties
+
+* We kunnen veronderstellen dat het willekeurige intercept en de willekeurige slope van de school gedeeltelijk worden verklaard door ("contextuele") variabelen op schoolniveau: bijvoorbeeld `mean.ses` en `sector`.   
+* Dit idee kan worden weergegeven als een random-slope model met `mean.ses` en `sector` als hoofdeffecten en interacties met `ses.dev` (zie de afleiding in de dia's): `mod4`.   
+* Als alternatief kunnen we hetzelfde model schatten maar de `ses.dev` helling vast houden (d.w.z. een random-intercept model): `mod5`.   
+* We testen of `mod4` significant meer variatie in de afhankelijke variabele verklaart in vergelijking met het eenvoudigere, meer parsimonieuze `mod5` (Likelihood Ratio Test).  - Gebaseerd op LRT resultaten, hebben we geen bewijs om de willekeurige helling te ondersteunen (d.w.z. om de nulhypothese te verwerpen dat de `ses.dev` helling vast is voor alle scholen), dus kiezen we `mod5` boven `mod4`.   
+* Van `mod5` verkrijgen we voorspelde waarden van leerling `mathach` als functie van leerling `ses.dev`, gegeven verschillende contexten (d.w.z. verschillende vaste waarden van `mean.ses` en `sector` van de school). Vervolgens plotten we deze resultaten.
+
+
+
+```{r contextual, out.width = "100%", fig.height = 3}
+# Schat het model
+mod4 <- lmer(mathach ~ 1 + mean.ses*ses.dev + sector*ses.dev 
+             + (1 + ses.dev | school), 
+             data=df)
+
+# zie resultaten
+summary(mod4)
+```
+
+```{r}
+tidy(mod4)
+
+```
+
+```{r}
+# Test voor random slope voor ses.dev: vergelijk random intercept vs random slope
+# modellen met zelfde vaste effecten.
+
+# Schat zelfde model als mod4, maar zonder random slope (alleen random intercept).
+mod5 <- lmer(mathach ~ 1 + mean.ses*ses.dev + sector*ses.dev 
+             + (1 | school), data=df)
+
+# Zie resultaten
+summary(mod5)
+```
+
+```{r}
+tidy(mod5)
+```
+
+```{r}
+# Test dit: LRT vergelijkt random slope model vs random intercept model
+anova(mod5, mod4)
+```
+```{r}
+# Gebaseerd op de waarde van de vastgestelde Chikwadraat statistiek en z'n p-waarde, houden we 
+# het random intercept model met vaste slope voor ses.dev: mod5
+
+# Krijg mod5 voorspelde waarden voor ses.dev, op verschillende niveaus van school sector en 
+# mean.ses.
+pred.val <- ggpredict(mod5, terms = c("ses.dev", "mean.ses [-1:0.5 by=0.5]", "sector")) %>%
+  as_tibble() %>%
+  dplyr::rename(ses.dev = x, mathach = predicted, mean.ses = group, sector = facet)
+
+pred.val
+```
+
+```{r}
+# Plot deze voorspelde effecten
+ggplot(pred.val) + 
+  # Lijnen van mathach en ses.dev, gegroepeerd/gekleurd via  sector (Openbaar vs Katholiek)
+  geom_line(aes(y = mathach, x = ses.dev, group = sector, color = sector)) +
+  # Verschillende afbeeldingen voor verschillende mean.ses waarden
+  facet_grid(~ mean.ses) + 
+  theme(legend.position="bottom")
+```
+
+* _Hoeveel vaste effectparameters hebben we nu, vergeleken met vorige modellen? Waarom? _  
+* _Welke coëfficiëntschattingen zitten wel in `mod4` maar _niet_ in `mod5`? Waarom? _.  
+* _Hoe interpreteren we inhoudelijk de resultaten van de LRT tussen `mod4` en `mod5`? _.  
+* _Hoe kunnen we de visualisatie van voorspelde waarden uit `mod5` interpreteren? Wat is het (fixed) effect van `ses.dev` op `mathach`? Hoe verandert dit in katholieke vs. openbare scholen? Hoe verandert dit in scholen waarvan de leerlingenpopulatie gemiddeld een hogere SES heeft?
+
+
+# School random effecten en random intercepten onderzoeken
+
+* Bereken de schatting voor het vaste intercept op populatieniveau in openbare ($\beta_0$) en katholieke ($\beta_0+\beta_3$) scholen (zie dia's voor coëfficiëntnotatie). Bereken de schattingen voor het willekeurige effect van elke school $j$ [door @rasbash_lemma:_2008 $u_j$ genoemd].    
+* Voeg het vaste intercept toe aan elke $u_j$ om de geschatte realisatie van het willekeurige intercept van elke school te verkrijgen: $u_j$ voor openbare scholen en $u_j$ voor katholieke scholen.   
+* Dit is de gemiddelde wiskunde-score van de school bij gemiddelde waarden van de voorspellers (ervan uitgaande dat de voorspellers gecentreerd zijn).* Identificeer "beste" scholen op basis van de realisatie van het willekeurige intercept.   
+* Visualiseer de verdeling van dit willekeurige intercept en het verband met de gemiddelde SES van de school (`mean.ses`) voor openbare en katholieke scholen.
+
+
+
+
+```{r rand-eff}
+# Geschatte coefficienten in geselecteerde model
+mod5.res <- tidy(mod5)
+
+# Krijg vaste parameters van het model
+mod5.res %>%
+  filter(effect == "fixed")
+```
+
+```{r}
+# Vaste intercept
+mod5.res %>%
+  filter(effect == "fixed", term == "(Intercept)") %>%
+  pull(estimate)
+```
+
+```{r}
+# Merk op dat Openbare scholen referentie categorie is, voor Katholieke
+# scholen (dummy variabele=1) moeten we de sectorCatholic parameter toevoegen om
+# het actuele vaste intercept te krijgen.
+mod5.res %>%
+  filter(effect == "fixed", term == "sectorCatholic") %>%
+  pull(estimate)
+```
+
+```{r}
+# Sla vaste intercepten op.
+
+# Vaste intercept voor openbare scholen.
+(fixed_int_pub <- mod5.res %>%
+    filter(effect == "fixed", term == "(Intercept)") %>%
+    pull(estimate))
+```
+
+```{r}
+# Vaste intercept voor katholieke scholen
+(fixed_slo_cat <- mod5.res %>%
+  filter(effect == "fixed", term == "sectorCatholic") %>%
+  pull(estimate))
+```
+
+```{r}
+# Vaste intercept voor katholieke scholen: sum.
+(fixed_int_cat <- fixed_int_pub + fixed_slo_cat)
+```
+
+```{r}
+# lme4::ranef kan schattingen calculeren voor het intercept random effect model
+# voor elke school
+lme4::ranef(mod5) %>% 
+  str
+```
+```{r}
+ranef(mod5)$school %>%
+  head
+```
+
+```{r}
+# Opslaan als data frame
+(school.effects <- ranef(mod5)$school %>%
+  as_tibble(rownames = "school") %>%
+    # Dot wordt soms u_j genoemd.
+    rename(u_j = `(Intercept)`)
+    )
+```
+
+```{r}
+# Merk op dat school naar factor moet worden overgezet.
+school.effects %<>% 
+  mutate(school = factor(school))
+
+# Add school sector and mean.ses to the data frame of random effects.
+# Remember we have these variables here:
+lm.df
+```
+
+```{r}
+# Koppel
+school.effects %<>%
+  left_join(lm.df, by="school") %>%
+  dplyr::select(school, u_j, sector, mean.ses)
+  
+school.effects
+```
+
+```{r}
+# Voeg een kolom met een vaste intercept schatting toe
+# Onthoud dat dit verschillend is voor Katholieke vs Openbare scholen is
+# we gebruiken dplyr::case_when() om vaste intercept schatting te maken
+# voor elke school afhankelijk van de sector.
+school.effects %<>%
+  mutate(fixed.int = case_when(
+    sector == "Public" ~ fixed_int_pub,
+    sector == "Catholic" ~ fixed_int_cat
+  ))
+
+# Kijk
+school.effects
+```
+
+```{r}
+# Nu kunnen we de vaste intercept schattingen aan random effect schatting koppelen
+# om de geschatte realisatie van intercept te krijgen . 
+school.effects %<>%
+  mutate(ran.int = fixed.int + u_j)
+
+# Kijk
+school.effects
+```
+
+```{r}
+# "Beste" scholen: hoogste waarde van random intercept (gemiddelde math score bij    # gemiddelde waarden van de predictoren 
+school.effects %>%
+  arrange(desc(ran.int))
+```
+
+```{r}
+# Beste onder katholieke scholen
+school.effects %>% 
+  filter(sector=="Catholic") %>%
+  arrange(desc(ran.int))
+```
+```{r}
+# Beste onder openbare scholen 
+school.effects %>% 
+  filter(sector=="Public") %>%
+  arrange(desc(ran.int))
+```
+
+```{r}
+# Visualiseer random intercept verdeling per sector
+ggplot(school.effects, aes(x=sector, y= ran.int)) + geom_boxplot()
+```
+
+```{r}
+# Visualiseer random intercepten bij mean.ses in katholieke vs openbare scholen
+ggplot(school.effects, 
+       aes(x=mean.ses, y=ran.int, color = sector)) + 
+  # Scatterplot geom
+  geom_point(shape=1) +
+  # lineaire regressie lijn
+  geom_smooth(method="lm", se=FALSE) +
+  # thema
+  theme_bw() 
+```
+Nu moet je antwoord op volgende vraag kunnen geven:
+* _How do we interpret these last two plots?_
+
+# Literatuur
+
+<style>
+    pre {
+        border: 0;
+    }
+</style>
